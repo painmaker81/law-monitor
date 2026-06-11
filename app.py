@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import xml.etree.ElementTree as ET
+from urllib.parse import quote
 from datetime import datetime
 import urllib3
 
