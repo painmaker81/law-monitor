@@ -73,3 +73,17 @@ if st.button("조회 시작"):
         res = fetch_law_history(item["name"], item["type"], target_date_str)
         if res: results.append(res)
     st.dataframe(pd.DataFrame(results))
+# 수정할 부분: 기존 파싱 로직 하단에 이 내용을 적용
+    latest = None
+    if histories:
+        # 일단 가장 최근 연혁을 무조건 가져와서 확인해 봅니다
+        latest = sorted(histories, key=lambda x: x["eff_date"], reverse=True)[0]
+    
+    if not latest: return None
+    
+    return {
+        "법규명": law_name, 
+        "구분": doc_type, 
+        "공포번호": latest.get('pub_num', '알 수 없음'), 
+        "시행일자": latest.get('eff_date', '알 수 없음')
+    }
