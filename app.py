@@ -9,7 +9,7 @@ import urllib3
 # 보안 경고 방지
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Streamlit Cloud의 Secrets에서 API 키 호출
+# Streamlit Cloud Secrets에서 API 키 호출
 API_KEY = st.secrets["gapjin"]
 
 st.set_page_config(page_title="법규 이력 시점 조회", layout="wide")
@@ -33,14 +33,13 @@ law_list.append({"name": "산업안전보건기준에 관한 규칙", "type": "�
 selected_date = st.date_input("조회 기준일을 선택하세요", datetime(2026, 2, 28))
 target_date_str = selected_date.strftime("%Y-%m-%d")
 
-# 통신 함수 (클라우드 환경에서는 verify=True를 권장하지만, 안정성을 위해 유지)
 def get_xml_data(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, verify=False, timeout=10)
         if response.status_code == 200:
             return ET.fromstring(response.content)
-    except Exception:
+    except Exception as e:
         return None
     return None
 
@@ -50,15 +49,20 @@ def fetch_law_history(law_name, doc_type, target_date):
     search_url = f"https://www.law.go.kr/DRF/lawSearch.do?OC={API_KEY}&target=law&type=XML&query={quote(query)}"
     
     root = get_xml_data(search_url)
-    if root is None: return "연결 실패"
+    if root is None: return f"연결 실패: {law_name}"
+    
+    # API 에러 메시지 확인
+    err = root.findtext("errMsg")
+    if err: return f"API오류({law_name}): {err}"
     
     lsi_seq = root.findtext(".//law/법령일련번호")
-    if not lsi_seq: return "일련번호 없음"
+    if not lsi_seq: return f"일련번호 없음: {law_name}"
     
     hist_url = f"https://www.law.go.kr/DRF/lawService.do?OC={API_KEY}&target=history&LID={lsi_seq}"
     hist_root = get_xml_data(hist_url)
-    if hist_root is None: return "연혁 없음"
+    if hist_root is None: return f"연혁 정보 없음: {law_name}"
     
+    # 연혁 데이터 파싱
     histories = []
     for hist in hist_root.findall(".//history"):
         eff_date = hist.findtext("시행일자")
@@ -72,7 +76,7 @@ def fetch_law_history(law_name, doc_type, target_date):
     
     target_dt = datetime.strptime(target_date, "%Y-%m-%d")
     valid = [h for h in histories if datetime.strptime(h["eff_date"], "%Y%m%d") <= target_dt]
-    if not valid: return "기준일 데이터 없음"
+    if not valid: return f"기준일 데이터 없음: {law_name}"
     
     latest = sorted(valid, key=lambda x: x["eff_date"], reverse=True)[0]
     return {
@@ -86,13 +90,13 @@ def fetch_law_history(law_name, doc_type, target_date):
 
 if st.button("조회 시작", type="primary"):
     results = []
-    with st.spinner("클라우드 서버에서 안전하게 동기화 중..."):
+    with st.spinner("클라우드 서버에서 상세 동기화 중..."):
         for item in law_list:
             res = fetch_law_history(item["name"], item["type"], target_date_str)
-            if isinstance(res, dict): results.append(res)
+            if isinstance(res, dict): 
+                results.append(res)
+            else:
+                st.warning(res) # 상세 오류 메시지 출력
     
     if results:
-        df = pd.DataFrame(results)
-        st.dataframe(df, column_config={"상세보기": st.column_config.LinkColumn("원문 확인")}, use_container_width=True, hide_index=True)
-    else:
-        st.error("데이터 조회 실패. 설정된 API KEY를 다시 확인해 주세요.")
+        st.dataframe(pd.DataFrame(results), column_config={"상세보기": st.column_config.LinkColumn("원문")}, use_container_width=True, hide_index=True)
